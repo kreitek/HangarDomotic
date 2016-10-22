@@ -14,64 +14,83 @@ http://www.mysensors.org/hardware/micro
  modified
  18 December 2015
  by greengo
+
+ modified
+ 22 October 2016
+ by enen
  */
 
-#include <MySensor.h>
-#include <SPI.h>
-#include "utility/SPIFlash.h"
-#include <EEPROM.h>  
-#include <sha204_lib_return_codes.h>
-#include <sha204_library.h>
+// Enable debug prints to serial monitor
+#define MY_DEBUG 
 
+// Select pin 9 (devduino2.2 LED) for debug. 
+// Select NC pin (p.e. 5) for avoid battery energy consumption!
+#define MY_DEFAULT_TX_LED_PIN 5
+#define MY_WITH_LEDS_BLINKING_INVERSE
 
 // Define a static node address, remove if you want auto address assignment
-#define NODE_ADDRESS   2
+#define MY_NODE_ID 23
+
+// Enable and select radio type attached
+#define MY_RADIO_NRF24
+
+// Set ISP devduino pins for NRF24
+#define MY_RF24_CE_PIN 7
+#define MY_RF24_CS_PIN 6
+
+#define MY_OTA_FIRMWARE_FEATURE
+
+#include <SPI.h>
+#include <MySensors.h>
+#include <Bounce2.h>
+#include <EEPROM.h>
+#include <sha204_library.h>
 
 // Uncomment the line below, to transmit battery voltage as a normal sensor value
 #define BATT_SENSOR    2
 
-#define RELEASE "1.0"
-
-#define CHILD_ID_TEMP  0
+#define RELEASE "2.0"
 
 // How many milli seconds between each measurement
-#define MEASURE_INTERVAL 50000 //for Debug 50 sec
-//#define MEASURE_INTERVAL  1000 //for Debug 10 sec
+#define MEASURE_INTERVAL 50000 // Normal 50s. for Debug 10 sec
 
 // How many milli seconds should we wait for OTA?
 #define OTA_WAIT_PERIOD 300
 
 // FORCE_TRANSMIT_INTERVAL, this number of times of wakeup, the sensor is forced to report all values to the controller
-#define FORCE_TRANSMIT_INTERVAL 30 
-//#define FORCE_TRANSMIT_INTERVAL 10 //for Debug 
+#define FORCE_TRANSMIT_INTERVAL 30  // Normal 30. 10 for Debug
 
 //LED Blink wait for OTA? LED blinks during data transmission. Greater battery energy consumption!
-#define LED_BLINK_WAIT_TRANSMIT  
+//#define LED_BLINK_WAIT_TRANSMIT
 
 #define TEMP_TRANSMIT_THRESHOLD 0.5
 
 #define OTA_ENABLE        4 // Button D4
 #define LED_PIN           9 // LED 
 #define ATSHA204_PIN     A2 // ATSHA204A 
+#define TEMP_PIN         A3 // Temp sensor MCP9700
+#define BUTTON_PIN        3 // Arduino Digital I/O pin for button/reed switch
 
-int TEMP_SENSE_PIN = A3;  // Input pin for the Temp sensor MCP9700
+#define CHILD_TEMP_ID  0
+#define CHILD_TRIP_ID  1
+#define CHILD_BATT_ID  BATT_SENSOR
+
+int TEMP_SENSE_PIN = TEMP_PIN;
 float TEMP_SENSE_OFFSET = -0.01;
 
 const int sha204Pin = ATSHA204_PIN;
 atsha204Class sha204(sha204Pin);
 
-SPIFlash flash(8, 0x1F65);
-
-MyTransportNRF24 transport(7, 6);
-MySensor gw(transport); 
-
 float temp = 0;
 
-MyMessage msgTemp(CHILD_ID_TEMP, V_TEMP);
+MyMessage msgTemp(CHILD_TEMP_ID, V_TEMP);
 
 #ifdef BATT_SENSOR
-MyMessage msgBatt(BATT_SENSOR, V_VOLTAGE);
+MyMessage msgBatt(CHILD_BATT_ID, V_VOLTAGE);
 #endif
+
+// Change to V_LIGHT if you use S_LIGHT in presentation below
+MyMessage msg(CHILD_TRIP_ID, V_TRIPPED);
 
 // Global settings
 int measureCount = 0;
@@ -79,54 +98,75 @@ boolean ota_enabled = false;
 int sendBattery = 0;
 boolean highfreq = true;
 boolean transmission_occured = false;
+Bounce debouncer = Bounce(); 
 
 // Storage of old measurements
 float lastTemperature = 0;
 long lastBattery = 0;
-float sendVCC; 
+float sendVCC;
+int oldValue=-1;
 
 // the setup function runs once when you press reset or power the board
 void setup() {
  
   // initialize digital pin 9 as an output.
-  pinMode(LED_PIN, OUTPUT); 
- 
+  pinMode(LED_PIN, OUTPUT);
+
   pinMode(OTA_ENABLE, INPUT);
   digitalWrite(OTA_ENABLE, HIGH);
   if (!digitalRead(OTA_ENABLE)) {
     ota_enabled = true;
-  } 
+  }
 
   // Make sure that ATSHA204 is not floating
   pinMode(ATSHA204_PIN, INPUT);
   digitalWrite(ATSHA204_PIN, HIGH);
  
   digitalWrite(OTA_ENABLE, LOW); // remove pullup, save some power. 
-  digitalWrite(LED_PIN, HIGH); 
   
-#ifdef NODE_ADDRESS
-  gw.begin(NULL, NODE_ADDRESS, false);
-#else
-  gw.begin(NULL,AUTO,false);
-#endif  
+  digitalWrite(LED_PIN, HIGH);
+
+#ifndef MY_NODE_ID
+  getNodeId();
+#endif 
   
   digitalWrite(LED_PIN, LOW);
+
+  // Setup the button
+  pinMode(BUTTON_PIN,INPUT);
+  // Activate internal pull-up
+  digitalWrite(BUTTON_PIN,HIGH);
+
+  // After setting up the button, setup debouncer
+  debouncer.attach(BUTTON_PIN);
+  debouncer.interval(5);
   
   Serial.flush();
-  Serial.println(F(" - Online!"));
-  gw.sendSketchInfo("devDuino SNv2.2", RELEASE); 
-  
-  gw.present(CHILD_ID_TEMP,S_TEMP); 
- 
-#ifdef BATT_SENSOR
-  gw.present(BATT_SENSOR, S_MULTIMETER);
-#endif 
+  Serial.println(F(" - Online!")); 
 
 sendTempMeasurements(false);
 sendBattLevel(false);
+sendTripStatus(false);
  
  if (ota_enabled) Serial.println("OTA FW update enabled");
   
+}
+
+void presentation() {
+  // void sendSketchInfo(const char *name, const char *version, bool ack);
+  sendSketchInfo("devDuino SNv2.2", RELEASE);
+  
+  // Register binary input sensor to gw (they will be created as child devices)
+  // You can use S_DOOR, S_MOTION or S_LIGHT here depending on your usage. 
+  // If S_LIGHT is used, remember to update variable type you send in. See "msg" above.
+  present(CHILD_TRIP_ID, S_DOOR, "Magnetic window/door sensor");
+
+  present(CHILD_TEMP_ID, S_TEMP, "Devduino2.2 temperature sensor");
+  
+#ifdef BATT_SENSOR
+  present(CHILD_BATT_ID, S_MULTIMETER, "Avr internal Vcc sensor");
+#endif
+
 }
 
 // the loop function runs over and over again forever
@@ -146,26 +186,32 @@ void loop() {
     measureCount = 0;
   }
     
-  gw.process();
+  //process();
 
+  sendTripStatus(false);  // send msg only if input change
   sendTempMeasurements(forceTransmit);
-  if (sendBattery > 60) 
+  if (sendBattery > 60)
   {
      sendBattLevel(forceTransmit); // Not needed to send battery info that often
      sendBattery = 0;
   }
 
   if (ota_enabled & transmission_occured) {
-      gw.wait(OTA_WAIT_PERIOD);
+      wait(OTA_WAIT_PERIOD);
   }
 
-  gw.sleep(MEASURE_INTERVAL);  
+  #define MY_SLEEP smartSleep
+  int8_t awake = MY_SLEEP(digitalPinToInterrupt(BUTTON_PIN), CHANGE, MEASURE_INTERVAL);
+  
+  if (awake > 0)
+    sendTripStatus(true); // send msg if awake casue input change
 }
+
 /********************************************
  *
  * Sends battery information (battery percentage)
  *
- * Parameters
+ * Parameters 
  * - force : Forces transmission of a value
  *
  *******************************************/
@@ -179,7 +225,7 @@ void sendBattLevel(bool force)
     lastBattery = vcc;
 
 #ifdef BATT_SENSOR
-    gw.send(msgBatt.set(sendVCC,2));
+    send(msgBatt.set(sendVCC,2));
 #endif
 
     // Calculate percentage
@@ -188,10 +234,11 @@ void sendBattLevel(bool force)
     
     long percent = vcc / 14.0;
     if (percent > 100); percent = 100;
-    gw.sendBatteryLevel(percent);
+    sendBatteryLevel(percent);
     transmission_occured = true;
   }
 }
+
 /*********************************************
  *
  * Sends temperature and humidity from Si7021 sensor
@@ -218,23 +265,23 @@ void sendTempMeasurements(bool force)
     Serial.print("T: ");Serial.println(temp);
  // LED 
 #ifdef LED_BLINK_WAIT_TRANSMIT
-   digitalWrite(LED_PIN, HIGH);  
-     gw.send(msgTemp.set(temp,1));
-   digitalWrite(LED_PIN, LOW);
+     digitalWrite(LED_PIN, HIGH);  
+     send(msgTemp.set(temp,1));
+     digitalWrite(LED_PIN, LOW);
 #else
-     gw.send(msgTemp.set(temp,1));
+     send(msgTemp.set(temp,1));
 #endif
     lastTemperature = temp;
     transmission_occured = true;
   }
 }
+
 /*******************************************
  *
  * Internal TEMP sensor 
  *
  *******************************************/
 float readMCP9700(int pin,float offset)
-
 {
   analogReference(INTERNAL);
   
@@ -251,6 +298,7 @@ float readMCP9700(int pin,float offset)
  
   return temp;
 }
+
 /*******************************************
  *
  * Internal battery ADC measuring 
@@ -281,5 +329,32 @@ long readVcc() {
   result = 1125300L / result; // Calculate Vcc (in mV); 1125300 = 1.1*1023*1000
   return result; // Vcc in millivolts
  
+}
+
+/*********************************************
+ *
+ * Sends tripped status from D3 Reed switch sensor
+ *
+ * Parameters
+ * - force : Forces transmission of a value (even if it's the same as previous measurement)
+ *
+ *********************************************/
+void sendTripStatus(bool force) {
+  debouncer.update();
+  // Get the update value
+  int value = debouncer.read();
+
+  if (value != oldValue || force) {
+    
+//     debouncer.update();
+//     // Get the update value
+//     int value = debouncer.read();
+
+     if (value != oldValue || force) {    
+       // Send in the new value
+       send(msg.set(value==HIGH ? 1 : 0));
+       oldValue = value;
+     }
+  }
 }
 
