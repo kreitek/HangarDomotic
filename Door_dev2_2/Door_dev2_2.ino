@@ -49,7 +49,7 @@ http://www.mysensors.org/hardware/micro
 // Uncomment the line below, to transmit battery voltage as a normal sensor value
 #define BATT_SENSOR    2
 
-#define RELEASE "2.0-1"
+#define RELEASE "2.0-2"
 
 // How many milli seconds between each measurement
 #define MEASURE_INTERVAL 50000 // Normal 50s. for Debug 10 sec
@@ -104,7 +104,6 @@ Bounce debouncer = Bounce();
 float lastTemperature = 0;
 long lastBattery = 0;
 float sendVCC;
-int oldValue=-1;
 
 // the setup function runs once when you press reset or power the board
 void setup() {
@@ -139,7 +138,7 @@ void setup() {
 
   // After setting up the button, setup debouncer
   debouncer.attach(BUTTON_PIN);
-  debouncer.interval(5);
+  debouncer.interval(300);
   
   Serial.flush();
   Serial.println(F(" - Online!")); 
@@ -343,19 +342,6 @@ void sendTripStatus(bool force) {
   debouncer.update();
   // Get the update value
   int value = debouncer.read();
-
-  if (value != oldValue || force) {
-
-     delay(50);
-     debouncer.update();
-     // Get the update value
-     int value = debouncer.read();
-
-     if (value != oldValue || force) {    
-       // Send in the new value
-       send(msg.set(value==HIGH ? 1 : 0));
-       oldValue = value;
-     }
-  }
+   // Send in the new value
+   send(msg.set(value==HIGH ? 1 : 0));
 }
-
