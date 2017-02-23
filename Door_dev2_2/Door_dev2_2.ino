@@ -49,7 +49,7 @@ http://www.mysensors.org/hardware/micro
 // Uncomment the line below, to transmit battery voltage as a normal sensor value
 #define BATT_SENSOR    2
 
-#define RELEASE "2.0"
+#define RELEASE "2.0-1"
 
 // How many milli seconds between each measurement
 #define MEASURE_INTERVAL 50000 // Normal 50s. for Debug 10 sec
@@ -345,10 +345,11 @@ void sendTripStatus(bool force) {
   int value = debouncer.read();
 
   if (value != oldValue || force) {
-    
-//     debouncer.update();
-//     // Get the update value
-//     int value = debouncer.read();
+
+     delay(50);
+     debouncer.update();
+     // Get the update value
+     int value = debouncer.read();
 
      if (value != oldValue || force) {    
        // Send in the new value
