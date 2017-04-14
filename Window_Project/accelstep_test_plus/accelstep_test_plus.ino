@@ -10,11 +10,13 @@
 // 3600 to -3600 (which is 7200 steps).
 
 #define STEPS_PER_MM 200
+#define ENABLE_PIN A1
+#define RETURN_PIN A0
 
 #include <AccelStepper.h>
 // Define a stepper and the pins it will use
 AccelStepper stepper(AccelStepper::DRIVER, 5, 3);
-int pos = 18 * STEPS_PER_MM;
+int pos = 50 * STEPS_PER_MM;
 
 #define LED_PIN 9
 int ledState = LOW;             // ledState used to set the LED
@@ -23,9 +25,14 @@ const long interval = 1000;           // interval at which to blink (millisecond
 
 void setup()
 { 
-  stepper.setMaxSpeed(3000);
-  stepper.setAcceleration(1000);
-  pinMode(LED_PIN, OUTPUT);
+  stepper.setMaxSpeed(500);
+  stepper.setAcceleration(300);
+  
+  pinMode(LED_PIN, OUTPUT);  
+  pinMode(ENABLE_PIN, OUTPUT);
+  
+  pinMode(RETURN_PIN, INPUT);
+  digitalWrite(RETURN_PIN, INPUT_PULLUP);
 }
 
 void loop()
@@ -37,16 +44,23 @@ void loop()
     stepper.moveTo(pos);\
   }
   stepper.run();
+  bool letsmove = !digitalRead(RETURN_PIN);
+  blink_led(letsmove);
+  digitalWrite(ENABLE_PIN, letsmove);
+}
 
-  unsigned long currentMillis = millis();
-  if (currentMillis - previousMillis >= interval) {
-    previousMillis = currentMillis;
-    if (ledState == LOW)
-      ledState = HIGH;
-    else
-      ledState = LOW;
-    digitalWrite(LED_PIN, ledState);
-  }
-  
+void blink_led(bool enable) {
+  if (enable) { 
+    unsigned long currentMillis = millis();
+    if (currentMillis - previousMillis >= interval) {
+      previousMillis = currentMillis;
+      if (ledState == LOW)
+        ledState = HIGH;
+      else
+        ledState = LOW;
+      digitalWrite(LED_PIN, ledState);
+    }
+  } else
+    digitalWrite(LED_PIN, LOW);
 }
 
