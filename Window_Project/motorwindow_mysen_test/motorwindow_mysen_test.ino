@@ -7,6 +7,13 @@ and MySensors 2.x
 // Enable debug prints to serial monitor
 #define MY_DEBUG 
 
+// Select pin 9 (devduino4 LED) for debug.
+#define MY_DEFAULT_TX_LED_PIN 9
+#define MY_WITH_LEDS_BLINKING_INVERSE
+
+// Define a static node address, remove if you want auto address assignment
+#define MY_NODE_ID 26
+
 // Enable and select radio type attached
 #define MY_RADIO_NRF24
 
@@ -17,12 +24,12 @@ and MySensors 2.x
 #include <MyConfig.h>
 #include <MySensors.h>
 
-#define CHILD_ID_MOTOR 1
+#define CHILD_ID_MOTOR 0
 
-#define RELEASE "1.0-1"
+#define RELEASE "1.0-2"
 
 // Percentage that marks window open grade
-uint8_t openpos = 0;
+uint8_t openpos;
 
 // From:
 // http://www.schmalzhaus.com/EasyDriver/Examples/EasyDriverExamples.html
@@ -44,15 +51,35 @@ uint8_t openpos = 0;
 AccelStepper stepper(AccelStepper::DRIVER, 5, 3);
 //int pos = 50 * STEPS_PER_MM;
 
-#define STOPPED 0
-#define OPENING 1
-#define CLOSING 2
-unsigned int state;
+#define UP      0
+#define DOWN    1
+#define STOPPED 2
+#define OPENING 3
+#define CLOSING 4
+unsigned int state = STOPPED;
+static bool initial_state_sent = false;
+
+MyMessage upMessage(CHILD_ID_MOTOR, V_UP);
+MyMessage downMessage(CHILD_ID_MOTOR, V_DOWN);
+MyMessage stopMessage(CHILD_ID_MOTOR, V_STOP);
+MyMessage statusMessage(CHILD_ID_MOTOR, V_STATUS);
+MyMessage percentMessage(CHILD_ID_MOTOR, V_PERCENTAGE);
+
 
 #define LED_PIN 9
 int ledState = LOW;             // ledState used to set the LED
 unsigned long previousMillis = 0;        // will store last time LED was updated
 const long interval = 1000;           // interval at which to blink (milliseconds)
+
+
+void sendState() {
+  // Send current state and status to gateway.
+  send(upMessage.set(state == UP));
+  send(downMessage.set(state == DOWN));
+  send(stopMessage.set(state == STOPPED));
+  send(statusMessage.set(state != DOWN));
+  send(percentMessage.set(openpos));
+}
 
 void before()
 {
@@ -74,23 +101,32 @@ void setup()
 void presentation()
 {
   // void sendSketchInfo(const char *name, const char *version, bool ack);
-  sendSketchInfo("devDuino SNv4 Window test", RELEASE);
+  sendSketchInfo("devDuino SNv4 WProtest", RELEASE);
 
-  present(CHILD_ID_MOTOR, S_COVER, "Devduino4 window motor");
+  present(CHILD_ID_MOTOR, S_COVER);
   
 }
 
 void loop()
 {
-  if (stepper.distanceToGo() == 0)
-    state = STOPPED;
+  if (!initial_state_sent) {
+    updateFixedState();
+    sendState();
+    initial_state_sent = true;
+  }
+  
   stepper.run();
+  if (stepper.distanceToGo() == 0 && state > STOPPED)
+  {
+    updateFixedState();
+    sendState();
+  }
   
   bool carriage_ret = return_triggered();
   blink_led(state != STOPPED && !carriage_ret);
   
   if (carriage_ret && state == CLOSING)
-    _stop();
+    _disable();
 }
 
 void receive(const MyMessage &message)
@@ -100,20 +136,18 @@ void receive(const MyMessage &message)
     switch (message.type)
     {
       case V_UP:
-        openpos = 100 - openpos;
-        _moveTo(openpos);
+        _moveTo(100);
         break;
       case V_DOWN:
-        openpos = 0 - openpos;
-        _moveTo(openpos);
+        _moveTo(0);
         break;
       case V_STOP:
+        _disable();
         openpos = currentPos();
-        _stop();
+        stepper.setCurrentPosition(percentageToSteps(openpos));
         break;
       case V_PERCENTAGE:
-        openpos = message.getByte() - openpos;
-        _moveTo(openpos);
+        _moveTo(message.getByte());
         break;
       //default:
     }
@@ -121,25 +155,40 @@ void receive(const MyMessage &message)
   }
 }
 
-void _stop() {
+void _disable() {
   digitalWrite(ENABLE_PIN, HIGH);
-  state = STOPPED;
+  stepper.stop();
 }
 
-void _start() {
-  state = openpos < 0 ? CLOSING : (openpos > 0 ? OPENING : STOPPED);
-  if (state != CLOSING && !return_triggered())
+void _enable() {
+  if (state != CLOSING || !return_triggered())
     digitalWrite(ENABLE_PIN, LOW);
-}
-
-bool return_triggered() {
-  return !digitalRead(RETURN_PIN);
 }
 
 void _moveTo(uint8_t pos) {
   delay(500);
-  stepper.moveTo(percentageToSteps(pos));
-  _start();
+  int moving_to = pos - openpos;
+  if (moving_to)
+  {
+    stepper.moveTo(percentageToSteps(moving_to));
+    state = moving_to < 0 ? CLOSING : (moving_to > 0 ? OPENING : STOPPED);
+    _enable();
+    openpos = pos;
+  }
+}
+
+void updateFixedState()
+{
+  switch (openpos)
+  {
+    case 0:   state = DOWN; break;
+    case 100: state = UP; break;
+    default:  state = STOPPED;
+  }
+}
+
+bool return_triggered() {
+  return !digitalRead(RETURN_PIN);
 }
 
 int percentageToSteps(uint8_t percentage)
@@ -149,7 +198,7 @@ int percentageToSteps(uint8_t percentage)
 
 uint8_t currentPos()
 {
-  return (stepper.distanceToGo() / STEPS_PER_MM) - openpos;
+  return openpos - (stepper.distanceToGo() / STEPS_PER_MM);
 }
 
 void blink_led(bool enable) {
