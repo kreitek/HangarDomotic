@@ -1,7 +1,7 @@
 /*
 This sketch is for a DevDuino 4.0 
 http://www.seeedstudio.com/depot/devDuino-Sensor-Node-V4-ATmega-328-Integrated-temperature-humidity-sensor-p-2279.html
-and MySensors 1.5
+and MySensors 2.x
  
  modified
  31 December 2015
@@ -16,8 +16,8 @@ and MySensors 1.5
 // Enable debug prints to serial monitor
 #define MY_DEBUG 
 
-// Select pin 9 (devduino2.2 LED) for debug.
-#define MY_DEFAULT_TX_LED_PIN 5
+// Select pin 9 (devduino4 LED) for debug.
+#define MY_DEFAULT_TX_LED_PIN 9
 #define MY_WITH_LEDS_BLINKING_INVERSE
 
 // Define a static node address, remove if you want auto address assignment
