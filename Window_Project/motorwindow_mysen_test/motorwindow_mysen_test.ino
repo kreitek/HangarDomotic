@@ -27,7 +27,7 @@ and MySensors 2.x
 #define CHILD_ID_MOTOR 0
 
 #define SKETCH_NAME "devDuino SNv4 WProtest"
-#define RELEASE "2.0-1"
+#define RELEASE "2.0-2"
 
 // Percentage that marks window open grade
 uint8_t openpos;
@@ -198,6 +198,7 @@ void closeWindow() {
   stepper.move(-400L * STEPS_PER_MM);
   state = CLOSING;
   openpos = 0;
+  _enable();
 }
 
 /********  STATE ***********/
@@ -247,7 +248,7 @@ long int percentageToSteps(uint8_t percentage)
 
 uint8_t stepsToPercentage(long int actual_steps)
 {
-  return max(0, min(100, (actual_steps / (STEPS_PER_MM * 27) * 10)));
+  return max(0, min(100, ((abs(actual_steps) * 10L) / (STEPS_PER_MM * 27L))));
 }
 
 /*******************/
