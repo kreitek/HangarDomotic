@@ -212,8 +212,8 @@ void receive(const MyMessage &message)
 
 /********  MOTOR ***********/
 
-int getCurrentPos() {
-  int current = stepper.currentPosition();
+long int getCurrentPos() {
+  long int current = stepper.currentPosition();
   Serial.print(F("current_steps=")); Serial.println(current);
   return current;
 }

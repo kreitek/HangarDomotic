@@ -27,7 +27,7 @@ and MySensors 2.x
 #define CHILD_ID_MOTOR 0
 
 #define SKETCH_NAME "devDuino SNv4 WProtest"
-#define RELEASE "2.0-2"
+#define RELEASE "2.0-3"
 
 // Percentage that marks window open grade
 uint8_t openpos;
@@ -165,8 +165,8 @@ void receive(const MyMessage &message)
 
 /********  MOTOR ***********/
 
-int getCurrentPos() {
-  int current = stepper.currentPosition();
+long int getCurrentPos() {
+  long int current = stepper.currentPosition();
   Serial.print("current_steps="); Serial.println(current);
   return current;
 }
