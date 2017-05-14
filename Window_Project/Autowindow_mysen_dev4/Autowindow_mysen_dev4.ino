@@ -112,7 +112,7 @@ void sendState() {
 void before()
 {
   openpos = loadState(CHILD_ID_MOTOR);
-  Serial.print("before> ");
+  Serial.print(F("before> "));
   getCurrentPos();
 }
 
@@ -128,7 +128,7 @@ void setup()
   digitalWrite(RETURN_PIN, INPUT_PULLUP);
 
   Serial.begin(MY_BAUD_RATE);
-  Serial.println("Started. Please wait...");
+  Serial.println(F("Started. Please wait..."));
 
   myHumidity.begin();
   Serial.println(F("Online!"));
@@ -161,7 +161,7 @@ void loop()
   {
     updateFixedState();
     sendState();
-    Serial.print("arrived> ");
+    Serial.print(F("arrived> "));
     getCurrentPos();
   }
   
@@ -214,7 +214,7 @@ void receive(const MyMessage &message)
 
 int getCurrentPos() {
   int current = stepper.currentPosition();
-  Serial.print("current_steps="); Serial.println(current);
+  Serial.print(F("current_steps=")); Serial.println(current);
   return current;
 }
 
@@ -232,7 +232,7 @@ void _moveTo(uint8_t pos) {
   int moving_to = pos - openpos;
   if (moving_to)
   {
-    Serial.print("moving_to ... "); Serial.println(percentageToSteps(moving_to));
+    Serial.print(F("moving_to ... ")); Serial.println(percentageToSteps(moving_to));
     stepper.move(percentageToSteps(moving_to));
     _enable();
     openpos = pos;
@@ -273,7 +273,7 @@ bool return_triggered()
 
 void setDocked()
 {
-  Serial.print("dock  > "); getCurrentPos();
+  Serial.print(F("dock  > ")); getCurrentPos();
   stepper.setCurrentPosition(0);
   state = DOWN;
   sendState();
